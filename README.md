@@ -31,8 +31,8 @@ pip install -r requirements.txt
 ## Setup
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/your-username/Text2SQL-Agent.git
-   cd Text2SQL-Agent
+   git clone https://github.com/ankushsurana/RAG-SQL-Agent.git
+   cd RAG-SQL-Agent
    ```
 2. **Configure environment variables:**
    - Copy `.env.example` to `.env` and fill in your API keys:
