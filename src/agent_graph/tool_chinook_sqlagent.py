@@ -1,66 +1,40 @@
+from functools import lru_cache
 from typing import List
-from langchain_huggingface import ChatHuggingFace, HuggingFaceEndpoint
-from langchain_core.pydantic_v1 import BaseModel, Field
-from langchain.chains.openai_tools import create_extraction_chain_pydantic
 from langchain_community.utilities import SQLDatabase
 from langchain.chains import create_sql_query_chain
-from langchain_core.runnables import RunnablePassthrough
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnableLambda, RunnablePassthrough
 from operator import itemgetter
 from langchain_core.tools import tool
-from sqlalchemy import NullPool, create_engine
+from agent_graph.llm_utils import load_llm
 from agent_graph.load_tools_config import LoadToolsConfig
-from langchain_core.runnables import RunnableLambda
+from agent_graph.sql_utils import create_readonly_engine, extract_sql
 
 
 TOOLS_CFG = LoadToolsConfig()
 
+MUSIC_TABLES = ["Album", "Artist", "Genre", "MediaType", "Playlist", "PlaylistTrack", "Track"]
+BUSINESS_TABLES = ["Customer", "Employee", "Invoice", "InvoiceLine"]
 
-class Table(BaseModel):
-    """
-    Represents a table in the SQL database.
 
-    Attributes:
-        name (str): The name of the table in the SQL database.
-    """
-
-    name: str = Field(description="Name of table in SQL database.")
-
-class TableList(BaseModel):
-    """
-    Represents a list of tables in the SQL database.
-
-    Attributes:
-        tables (List[Table]): A list of relevent Table objects representing the tables in the SQL database.
-    """
-    tables: List[Table] = Field(description="\nList of relevent tables names.")
-
-def get_tables(categories: TableList) -> List[str]:
-    """Maps category names to corresponding SQL table names.
+def get_tables(categories: str) -> List[str]:
+    """Maps the category names in the LLM output to the corresponding SQL table names.
 
     Args:
-        categories (List[Table]): A list of `Table` objects representing different categories.
+        categories (str): The LLM output, which names the relevant categories.
 
     Returns:
-        List[str]: A list of SQL table names corresponding to the provided categories.
+        List[str]: A list of SQL table names corresponding to the provided categories. If the
+        output doesn't name a category, all the tables are returned so that the query can still be written.
     """
+    categories = categories.lower()
     tables = []
-    for category in categories:
-        if category.name == "Music":
-            tables.extend(
-                [
-                    "Album",
-                    "Artist",
-                    "Genre",
-                    "MediaType",
-                    "Playlist",
-                    "PlaylistTrack",
-                    "Track",
-                ]
-            )
-        elif category.name == "Business":
-            tables.extend(
-                ["Customer", "Employee", "Invoice", "InvoiceLine"])
-    return tables
+    if "music" in categories:
+        tables.extend(MUSIC_TABLES)
+    if "business" in categories:
+        tables.extend(BUSINESS_TABLES)
+    return tables or MUSIC_TABLES + BUSINESS_TABLES
 
 
 class ChinookSQLAgent:
@@ -71,45 +45,41 @@ class ChinookSQLAgent:
     def __init__(self, sqldb_directory: str, llm: str, llm_temerature: float) -> None:
         """Initializes the ChinookSQLAgent with the LLM and database connection.
         """
-        self.sql_agent_llm = ChatHuggingFace(
-            llm=HuggingFaceEndpoint(
-                repo_id=llm,
-                temperature=llm_temerature
-            )
-        )
-        engine = create_engine(
-            f"sqlite:///{sqldb_directory}",
-            connect_args={"check_same_thread": False},
-            poolclass=NullPool
-        )
-        self.db = SQLDatabase(engine)
+        self.sql_agent_llm = load_llm(repo_id=llm, temperature=llm_temerature)
+        self.db = SQLDatabase(create_readonly_engine(sqldb_directory))
         print(self.db.get_usable_table_names())
 
-        category_chain_system = """Return the names of the SQL tables that are relevant to the user question. \
-        The tables are:
+        category_chain_system = """Return the categories of SQL tables that are relevant to the user question, \
+        as a comma-separated list and nothing else. The categories are:
 
-        Music
-        Business"""
-        category_chain = create_extraction_chain_pydantic(
-            TableList, self.sql_agent_llm, system_message=category_chain_system)
+        Music: albums, artists, genres, media types, playlists and tracks
+        Business: customers, employees, invoices and sales"""
+        category_prompt = ChatPromptTemplate.from_messages(
+            [("system", category_chain_system), ("human", "{input}")])
+        category_chain = category_prompt | self.sql_agent_llm | StrOutputParser()
         table_chain = category_chain | RunnableLambda(get_tables)
 
-        query_chain = create_sql_query_chain(self.sql_agent_llm, self.db)
+        query_chain = create_sql_query_chain(self.sql_agent_llm, self.db) | RunnableLambda(extract_sql)
         table_chain = {"input": itemgetter("question")} | table_chain
 
         self.full_chain = RunnablePassthrough.assign(
             table_names_to_use=table_chain) | query_chain
 
 
-@tool
-def query_chinook_sqldb(query: str) -> str:
-    """Query the Chinook SQL Database. Input should be a search query."""
-    agent = ChinookSQLAgent(
+@lru_cache(maxsize=1)
+def get_agent() -> ChinookSQLAgent:
+    return ChinookSQLAgent(
         sqldb_directory=TOOLS_CFG.chinook_sqldb_directory,
         llm=TOOLS_CFG.chinook_sqlagent_llm,
         llm_temerature=TOOLS_CFG.chinook_sqlagent_llm_temperature
     )
 
-    query = agent.full_chain.invoke({"input": query})
 
-    return agent.db.run(query)
+@tool
+def query_chinook_sqldb(query: str) -> str:
+    """Query the Chinook SQL Database of a digital music store, which has its artists, albums, tracks, genres, playlists, customers, employees and invoices. Input should be a search query."""
+    agent = get_agent()
+
+    sql_query = agent.full_chain.invoke({"question": query})
+
+    return agent.db.run(sql_query) or "The query returned no rows."

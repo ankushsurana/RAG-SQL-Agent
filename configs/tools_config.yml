@@ -1,6 +1,7 @@
 primary_agent:
   llm: meta-llama/Llama-3.3-70B-Instruct
   llm_temperature: 0.0
+  max_history_messages: 40 # The number of latest messages of the conversation that are sent to the LLM.
 
 swiss_airline_policy_rag:
   unstructured_docs: "data/unstructured_docs/swiss_airline_policy"
@@ -8,10 +9,9 @@ swiss_airline_policy_rag:
   collection_name: rag-chroma
   llm: meta-llama/Llama-3.3-70B-Instruct
   llm_temperature: 0.0
-  embedding_model: 
+  embedding_model:
     # model_name: sentence-transformers/all-MiniLM-L6-v2
     model_name: BAAI/bge-small-en-v1.5
-    model_kwargs: {"device": "cuda"}  
     encode_kwargs: {"normalize_embeddings": True}
   chunk_size: 500
   chunk_overlap: 100
@@ -23,10 +23,9 @@ novel_rag:
   collection_name: novel-rag-chroma
   llm: meta-llama/Llama-3.3-70B-Instruct
   llm_temperature: 0.0
-  embedding_model: 
+  embedding_model:
     # model_name: sentence-transformers/all-MiniLM-L6-v2
     model_name: BAAI/bge-small-en-v1.5
-    model_kwargs: {"device": "cuda"}
     encode_kwargs: {"normalize_embeddings": True}
   chunk_size: 500
   chunk_overlap: 100
@@ -36,19 +35,11 @@ travel_sqlagent_configs:
   travel_sqldb_dir: "data/travel.sqlite"
   llm: "meta-llama/Llama-3.3-70B-Instruct"
   llm_temperature: 0.0
-  
+
 chinook_sqlagent_configs:
   chinook_sqldb_dir: "data/Chinook.db"
   llm: "meta-llama/Llama-3.3-70B-Instruct"
   llm_temperature: 0.0
 
-langsmith:
-  tracing: "true"
-  project_name: "rag_sqlagent_project"
-
 tavily_search_api:
   tavily_search_max_results: 2
-
-graph_configs:
-  thread_id: 1 # This can be adjusted to assign a unique value for each user session, so it's easier to access data later on.
-  

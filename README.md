@@ -18,10 +18,10 @@ Text2SQL-Agent is a modular, production-ready, and extensible agent framework fo
 - `memory/` — Chat history logs
 
 ## Requirements
-- Python 3.9+
-- [Hugging Face Token](https://huggingface.co/settings/tokens) (for LLMs)
+- Python 3.11 (the pinned dependencies were tested on this version)
+- [Hugging Face Token](https://huggingface.co/settings/tokens) (for LLMs). The default LLM runs on Inference Providers, so the account needs inference credits.
 - [Tavily API Key](https://app.tavily.com/) (for web search)
-- [LangChain API Key](https://smith.langchain.com/) (for tracing)
+- [LangChain API Key](https://smith.langchain.com/) (optional, for tracing)
 
 Install dependencies:
 ```bash
@@ -40,11 +40,14 @@ pip install -r requirements.txt
      cp .env.example .env
      # Edit .env and set HF_TOKEN, TAVILY_API_KEY, LANGCHAIN_API_KEY
      ```
-3. **Prepare vector databases:**
+3. **Add the travel database:**
+   - `data/travel.sqlite` is too large for the repository. Without it, the travel SQL tool returns an error to the agent and the other tools keep working.
+   - A copy of the Swiss Airline sample database is available from the [LangGraph tutorial data](https://storage.googleapis.com/benchmarks-artifacts/travel-db/travel2.sqlite). Save it as `data/travel.sqlite`.
+4. **Prepare vector databases:**
    ```bash
    python src/prepare_vector_db.py
    ```
-4. **Run the application:**
+5. **Run the application:**
    ```bash
    python src/app.py
    ```
@@ -53,7 +56,9 @@ pip install -r requirements.txt
 ## Usage
 - Use the chatbot UI to ask questions about your data, company policies, or the web.
 - The agent will automatically select the best tool (SQL, RAG, or search) to answer your query.
-- All chat history is saved in the `memory/` folder for each session.
+- Each browser session has its own conversation, and the Clear button starts a new one. Conversations are kept in memory until the app stops.
+- All chat history is logged to daily CSV files in the `memory/` folder, with the id of each conversation.
+- The SQL tools open the databases read-only, so generated SQL can't change the data.
 
 ## Customization
 - Add new tools or modify existing ones in `src/agent_graph/`.
