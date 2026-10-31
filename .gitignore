@@ -55,8 +55,10 @@ coverage.xml
 
 # Local env
 venv/
+.venv/
 .env
 .env.*
+!.env.example
 
 # Data
 memory/

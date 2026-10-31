@@ -1,4 +1,3 @@
-from IPython.display import Image, display
 from typing import Annotated, Literal
 from typing_extensions import TypedDict
 from langchain_core.messages import ToolMessage
@@ -32,13 +31,19 @@ class BasicToolNode:
 
     def __call__(self, state: State) -> State:
         """Executes the tools based on the tool calls in the last message.
+
+        A failing tool returns its error to the LLM, because every tool call needs a
+        ToolMessage and the LLM can then retry or explain the failure to the user.
         """
         message = state["messages"]
         last_message = message[-1]
         tool_messages = []
         for tool_call in last_message.tool_calls:
-            tool = self.tools[tool_call["name"]]
-            content = tool.invoke(tool_call["args"])
+            try:
+                tool = self.tools[tool_call["name"]]
+                content = tool.invoke(tool_call["args"])
+            except Exception as e:
+                content = f"Tool {tool_call['name']} failed with {type(e).__name__}: {e}"
             tool_messages.append(
                 ToolMessage(
                     content=str(content),
@@ -55,17 +60,17 @@ def route_tools(
     This function checks the last message in the state to see if it contains tool calls."""
     messages = state["messages"]
     last_message = messages[-1]
-        
+
     if hasattr(last_message, "tool_calls") and last_message.tool_calls:
-            return "tools"
-        
-    if isinstance(last_message, ToolMessage):
-        return "chatbot"
-            
+        return "tools"
+
     return "__end__"
 
 
 def plot_agent_schema(graph):
+    """Displays the graph in a notebook. Rendering the image calls the mermaid.ink web service."""
+    from IPython.display import Image, display
+
     try:
         display(Image(graph.get_graph().draw_mermaid_png()))
     except Exception:

@@ -1,12 +1,11 @@
 import os
-import torch
 import yaml
 from pyprojroot import here
 from langchain_chroma import Chroma
 from langchain_community.document_loaders import PyPDFLoader
-from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from dotenv import load_dotenv
+from agent_graph.rag_utils import load_embeddings
 
 class PrepareVectorDB:
     """
@@ -22,7 +21,7 @@ class PrepareVectorDB:
                  doc_dir: str,
                  chunk_size: int,
                  chunk_overlap: int,
-                 embedding_model: str,
+                 embedding_model: dict,
                  vectordb_dir: str,
                  collection_name: str
                  ) -> None:
@@ -42,80 +41,48 @@ class PrepareVectorDB:
 
     def run(self):
         """
-        Executes the main logic to create and store document embeddings in a VectorDB.
+        Executes the main logic to create and store document embeddings in a VectorDB. An existing
+        VectorDB is kept, unless it is empty because an earlier run failed.
         """
-        if not os.path.exists(here(self.vectordb_dir)):
-            os.makedirs(here(self.vectordb_dir))
-            print(f"Directory '{self.vectordb_dir}' was created.")
+        embeddings = load_embeddings(self.embedding_model)
+        vectordb = Chroma(
+            collection_name=self.collection_name,
+            embedding_function=embeddings,
+            persist_directory=str(here(self.vectordb_dir))
+        )
+        if vectordb._collection.count() > 0:
+            print(f"VectorDB '{self.vectordb_dir}' already exists.")
+            return
 
-            file_list = os.listdir(here(self.doc_dir))
-            docs = [PyPDFLoader(self.path_maker(
-                fn, self.doc_dir)).load_and_split() for fn in file_list]
-            docs_list = [item for sublist in docs for item in sublist]
+        file_list = [fn for fn in os.listdir(here(self.doc_dir)) if fn.lower().endswith(".pdf")]
+        docs = [PyPDFLoader(self.path_maker(
+            fn, self.doc_dir)).load() for fn in file_list]
+        docs_list = [item for sublist in docs for item in sublist]
 
-            text_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-                chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap
-            )
-            doc_splits = text_splitter.split_documents(docs_list)
+        text_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+            chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap
+        )
+        doc_splits = text_splitter.split_documents(docs_list)
 
-            embeddings = HuggingFaceEmbeddings(
-                    model_name=self.embedding_model["model_name"],
-                    model_kwargs={
-                        "device": "cuda" if torch.cuda.is_available() else "cpu"
-                    },
-                    encode_kwargs=self.embedding_model["encode_kwargs"]
-            )
-            
-            vectordb = Chroma.from_documents(
-                documents=doc_splits,
-                collection_name=self.collection_name,
-                embedding=embeddings,
-                persist_directory=str(here(self.vectordb_dir))
-            )
-            print("VectorDB is created and saved.")
-            print("Number of vectors in vectordb:",
-                  vectordb._collection.count(), "\n\n")
-        else:
-            print(f"Directory '{self.vectordb_dir}' already exists.")
+        vectordb.add_documents(doc_splits)
+        print("VectorDB is created and saved.")
+        print("Number of vectors in vectordb:",
+              vectordb._collection.count(), "\n\n")
 
 
 if __name__ == "__main__":
     load_dotenv()
-    os.environ['HF_TOKEN'] = os.getenv("HF_TOKEN", "")
 
     with open(here("configs/tools_config.yml")) as cfg:
-        app_config = yaml.load(cfg, Loader=yaml.FullLoader)
+        app_config = yaml.safe_load(cfg)
 
-    chunk_size = app_config["swiss_airline_policy_rag"]["chunk_size"]
-    chunk_overlap = app_config["swiss_airline_policy_rag"]["chunk_overlap"]
-    embedding_model = app_config["swiss_airline_policy_rag"]["embedding_model"]
-    vectordb_dir = app_config["swiss_airline_policy_rag"]["vectordb"]
-    collection_name = app_config["swiss_airline_policy_rag"]["collection_name"]
-    doc_dir = app_config["swiss_airline_policy_rag"]["unstructured_docs"]
+    for section in ["swiss_airline_policy_rag", "novel_rag"]:
+        prepare_db_instance = PrepareVectorDB(
+            doc_dir=app_config[section]["unstructured_docs"],
+            chunk_size=app_config[section]["chunk_size"],
+            chunk_overlap=app_config[section]["chunk_overlap"],
+            embedding_model=app_config[section]["embedding_model"],
+            vectordb_dir=app_config[section]["vectordb"],
+            collection_name=app_config[section]["collection_name"])
 
-    prepare_db_instance = PrepareVectorDB(
-        doc_dir=doc_dir,
-        chunk_size=chunk_size,
-        chunk_overlap=chunk_overlap,
-        embedding_model=embedding_model,
-        vectordb_dir=vectordb_dir,
-        collection_name=collection_name)
-
-    prepare_db_instance.run()
-
-    chunk_size = app_config["novel_rag"]["chunk_size"]
-    chunk_overlap = app_config["novel_rag"]["chunk_overlap"]
-    embedding_model = app_config["novel_rag"]["embedding_model"]
-    vectordb_dir = app_config["novel_rag"]["vectordb"]
-    collection_name = app_config["novel_rag"]["collection_name"]
-    doc_dir = app_config["novel_rag"]["unstructured_docs"]
-
-    prepare_db_instance = PrepareVectorDB(
-        doc_dir=doc_dir,
-        chunk_size=chunk_size,
-        chunk_overlap=chunk_overlap,
-        embedding_model=embedding_model,
-        vectordb_dir=vectordb_dir,
-        collection_name=collection_name)
-
-    prepare_db_instance.run()
+        prepare_db_instance.run()

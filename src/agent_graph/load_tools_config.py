@@ -1,4 +1,3 @@
-import os
 import yaml
 from dotenv import load_dotenv
 from pyprojroot import here
@@ -10,15 +9,14 @@ class LoadToolsConfig:
 
     def __init__(self) -> None:
         with open(here("configs/tools_config.yml")) as cfg:
-            app_config = yaml.load(cfg, Loader=yaml.FullLoader)
-
-        # Set environment variables
-        os.environ['HF_TOKEN'] = os.getenv("HF_TOKEN", "")
-        os.environ['TAVILY_API_KEY'] = os.getenv("TAVILY_API_KEY")
+            app_config = yaml.safe_load(cfg)
 
         # Primary agent
         self.primary_agent_llm = app_config["primary_agent"]["llm"]
-        self.primary_agent_llm_temperature = app_config["primary_agent"]["llm_temperature"]
+        self.primary_agent_llm_temperature = float(
+            app_config["primary_agent"]["llm_temperature"])
+        self.primary_agent_max_history_messages = int(
+            app_config["primary_agent"]["max_history_messages"])
 
         # Internet Search config
         self.tavily_search_max_results = int(
@@ -65,7 +63,3 @@ class LoadToolsConfig:
         self.chinook_sqlagent_llm = app_config["chinook_sqlagent_configs"]["llm"]
         self.chinook_sqlagent_llm_temperature = float(
             app_config["chinook_sqlagent_configs"]["llm_temperature"])
-
-        # Graph configs
-        self.thread_id = str(
-            app_config["graph_configs"]["thread_id"])

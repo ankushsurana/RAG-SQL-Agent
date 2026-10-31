@@ -11,6 +11,6 @@ class UISettings:
         Process user feedback on the generated response.
         """
         if data.liked:
-            print("You upvoted this response: " + data.value)
+            print(f"You upvoted this response: {data.value}")
         else:
-            print("You downvoted this response: " + data.value)
+            print(f"You downvoted this response: {data.value}")

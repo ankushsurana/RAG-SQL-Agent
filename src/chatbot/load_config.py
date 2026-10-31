@@ -6,14 +6,15 @@ from pyprojroot import here
 load_dotenv()
 
 with open(here("configs/project_config.yml")) as cfg:
-    app_config = yaml.load(cfg, Loader=yaml.FullLoader)
+    app_config = yaml.safe_load(cfg)
 
 
 class LoadProjectConfig:
     def __init__(self) -> None:
 
-        os.environ["LANGCHAIN_API_KEY"] = os.getenv("LANGCHAIN_API_KEY")
-        os.environ["LANGCHAIN_TRACING_V2"] = app_config["langsmith"]["tracing"]
+        # LangSmith tracing is optional and needs an API key.
+        tracing = app_config["langsmith"]["tracing"] if os.getenv("LANGCHAIN_API_KEY") else "false"
+        os.environ["LANGCHAIN_TRACING_V2"] = tracing
         os.environ["LANGCHAIN_PROJECT"] = app_config["langsmith"]["project_name"]
 
         self.memory_dir = here(app_config["memory"]["directory"])
